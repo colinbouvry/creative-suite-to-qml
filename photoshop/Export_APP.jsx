@@ -141,7 +141,7 @@ function main() {
 
     var myMaximumValue = 1.0;
     var myProgressBarWidth = 300;
-    progressPanel = new Window('window', 'Exporting document to QML...');
+    progressPanel = new Window('window', 'Exporting document to APP...');
     progressPanel.myProgressBar = progressPanel.add('progressbar', [12, 12, myProgressBarWidth, 24], 0, myMaximumValue);
     progressPanel.buttonCancel = progressPanel .add("button", undefined, "Cancel");
 
@@ -161,6 +161,8 @@ function main() {
     var elementNameQML = mainDialog.outputName.text;
 	var elementNameJSON = mainDialog.outputName.text;
 	
+	var mainFolder = mainDialog.outputName.text;
+	
 	//QML
     if (elementNameQML.indexOf(".qml") == -1) 	// Append .qml unless not explicitly set
         elementNameQML += ".qml"
@@ -171,7 +173,7 @@ function main() {
     var outputNameJSON = exportInfo.destination + "/" + elementNameJSON;
 
 	
-    var imagefolder = new Folder(exportInfo.destination + "/images/");
+    var imagefolder = new Folder(exportInfo.destination + "/" + mainFolder + "/");
     imagefolder.create();
 
     app.activeDocument.suspendHistory("export history", "");
@@ -198,7 +200,7 @@ function main() {
     }
 	
     countLayers(documentCopy) // For progressBar
-    exportChildren(documentCopy, app.documents[documentName], exportInfo, documentCopy, exportInfo.fileNamePrefix);
+    exportChildren(documentCopy, app.documents[documentName], exportInfo, documentCopy,"/" + mainFolder, exportInfo.fileNamePrefix);
 	documentCopy.close(SaveOptions.DONOTSAVECHANGES);
 	
     if (exportQML) {
@@ -346,7 +348,7 @@ function hideAll(obj) {
     }
 }
 
-function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
+function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, folder, fileNamePrefix) {
     var exportQML = mainDialog.exportQML.value
 	var exportJSON = mainDialog.exportJSON.value
     // Track names to detect duplicates
@@ -371,7 +373,9 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
         if (!orgObj.layers[i].visible && orgObj.layers[i].name.substring(0,1) != "_") { //colin a tester
             visible = false   
         }
-
+		if (!visible ) //&& !mainDialog.exportHidden.value)
+            continue;
+			
         if (!mainDialog.exportByGroup.value) {
 			if (currentLayer.typename == "LayerSet")
 			{
@@ -406,8 +410,26 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
 			//}
 			if (dupObj.layers[i].typename == "LayerSet" && dupObj.layers[i].name.substring(0,1)!= "_") 
 			{
-				dupObj.layerSets[i].visible = true;
-				exportChildren(dupObj.layerSets[i], orgObj.layerSets[i], exportInfo, dupDocRef, fileNameBody); // recursive call
+				dupObj.layers[i].visible = true;
+				var foldername = dupObj.layers[i].name;
+				var foldertmp = folder + "/" + dupObj.layers[i].name;
+				var imageLayerFolder = new Folder(exportInfo.destination + foldertmp + "/");
+				imageLayerFolder.create();
+	
+				if (exportJSON) {
+					// Write JSON NEW ITEM
+					jsonfile.write("    \"" + foldername + "\" : {\n");
+				}
+			
+				exportChildren(dupObj.layers[i], orgObj.layers[i], exportInfo, dupDocRef, foldertmp, fileNameBody); // recursive call
+				
+				if (exportJSON) {
+					// Write JSON NEW ITEM
+					if(i == 0) jsonfile.write("    }\n");
+					else jsonfile.write("    },\n");
+				}
+				
+				dupObj.layers[i].visible = false;
 				continue;
 			}
             else
@@ -421,8 +443,8 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
 			}
         }
            
-        if (!visible && !mainDialog.exportHidden.value)
-            continue;
+        //if (!visible ) //&& !mainDialog.exportHidden.value)
+        //    continue;
 
         // Since we already save opacity, we dont want it affecting the output image
         var opacity = currentLayer.opacity / 100.0;
@@ -486,7 +508,7 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
                 qmlfile.write("        color: " + qtColor(currentLayer.textItem.color) + "\n");
                 qmlfile.write("        smooth: true\n");
             } else {
-                qmlfile.write("        source: \"images/" + filename + "\"\n");
+                qmlfile.write("        \"source\": \"" + folder + "/" + filename + "\",\n");
             }
             qmlfile.write("        x: " + xoffset + "\n");
             qmlfile.write("        y: " + yoffset + "\n");
@@ -525,7 +547,7 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
                 jsonfile.write("        \"color\": " + qtColor(currentLayer.textItem.color) + ",\n");
                 jsonfile.write("        \"smooth\": \"true\",\n");
             } else {
-                jsonfile.write("        \"source\": \"images/" + filename + "\",\n");
+                jsonfile.write("        \"source\": \"" + folder + "/" + filename + "\",\n");
             }
             jsonfile.write("        \"x\": " + xoffset + ",\n");
             jsonfile.write("        \"y\": " + yoffset + ",\n");
@@ -539,7 +561,7 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
 		
         // Save document
         if (!isText) {
-            var saveFile = new File(exportInfo.destination + "/images/" + filename);
+            var saveFile = new File(exportInfo.destination + folder + "/" + filename);
             pngSaveOptions = new PNGSaveOptions();
             pngSaveOptions.interlaced = false;
             documentCopyTmp.saveAs(saveFile, pngSaveOptions, true, Extension.LOWERCASE);
@@ -548,7 +570,7 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
         // Close tempfile
         documentCopyTmp.close(SaveOptions.DONOTSAVECHANGES);
 
-        if (!mainDialog.exportByGroup.value )
+        //if (!mainDialog.exportByGroup.value )
             dupObj.layers[i].visible = false
     }
 
@@ -556,7 +578,7 @@ function exportChildren(dupObj, orgObj, exportInfo, dupDocRef, fileNamePrefix) {
         var fileNameBody = fileNamePrefix;
         fileNameBody += "_" + "s";
         if (!mainDialog.exportByGroup.value )
-            exportChildren(dupObj.layerSets[i], orgObj.layerSets[i], exportInfo, dupDocRef, fileNameBody); // recursive call
+            exportChildren(dupObj.layerSets[i], orgObj.layerSets[i], exportInfo, dupDocRef, folder, fileNameBody); // recursive call
     }
 }
 
